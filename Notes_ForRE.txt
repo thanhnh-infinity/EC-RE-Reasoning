@@ -1,0 +1,181 @@
+==================================================
+Representing Uncertain Rules Via Rule Assumptions:
+--------------------------------------------------
+- Sometimes we may want to express a rule that only holds some of the time, but we do not know specific conditions that prevent it from holding.
+
+flies(?x) :- bird(?x) [confidence=0.99].
+flies(?x) :- mammal(?x) [confidence=0.01].
+
+$addAssumption(bird(alice)).
+$addAssumption(mammal(alice)).
+
+Here we are saying that we are 99% confident that if something is a bird then it flies (so we allow for exceptions but don't list specific conditions like we did in the previous section.. e.g penguins)
+
+Then we give a much less confident (1%) rule that if something is a mammal then it flies
+
+The assumptions that are added indicate that we are unsure whether Alice is bird or mammal. The intention of this example is that we later query for what assumption make it most likely that Alice flies. 
+
+We can see the derived the Reasoning Engine has produced if we query the RE for all the rules, via the $getRules command. Note that "derivedFrom" feature on the rules indicates the original rule that came from
+
+>$getRules()
+
+If we query for the minimum cost partial labeling --->
+
+$getMinCostPartialLabeling(flies(alice)).
+
+knownTrue user/bird(arg1 : user/alice).
+knownTrue user/flies(arg1 : user/alice). Cost incresead 0.01 (confidence changed by 0.99)
+
+>$assertAssumption(~bird(alice))
+knownTrue ~user/bird(arg1: user/alice)
+unsupportable user/bird(arg1: user/alice)
+
+?$getMinCostPartialLabeling(flies(alice))
+knownTrue user/mamal(arg1: user/alice).
+knownTrue user/flies(arg1: user/alice).
+cost increased -- confidence changed by 0.01
+
+==================================================
+Defining Relations and Using Namespaces
+--------------------------------------------------
+
+Describes some useful features of the KR language you use to provide input
+
+reldef primitive tutorial/parent [
+    @parent entity.
+    @child entity.
+],
+
+This defines a primitive relation (there are other kinds of relations, ) whose predicate is tutorial/parent and whose role labels are parent and child, in that order. These roles are expected to take entities as arguments (as opposed to, say, integers or other formulas). However, the type restrictions are currently not enforced; they can be used for documentation.
+
+$reset()
+
+$load("ex11a")
+
+$addFact(tutorial/parent(alice,mary))
+knownTrue tutorial/parent(parent: user/alice, child:user/mary).
+
+We had to enter the namespace "tutorial" to match what was in the reldef. 
+
+$use("tutorial")
+
+$addFact(parent(john,alice))
+knownTrue tutorial/parent(parent : user/john, child:user/mary)
+
+There is also $dropUse if you change your mide. 
+
+The $use command is intended for use interactively in the REPL. If you are creating a file that you want to be able to load, things are done a bit differently. 
+
+use myns.
+default tutorial.
+
+reldef primitive parent [
+    @parent entity.
+    @child entity.
+].
+
+reldef primitive myns/orderThan [
+    @order entity.
+    @younger entity.
+].
+
+orderThan(?x,?y) :- parent(?x,?y).
+
+parent(alice,mary).
+
+---------
+
+$reset()
+
+> mysn/orderThan(?x,?y)
+
+knownTrue {?x = tutorial/alice, ?y=tutorial/mary}
+
+Note that alice and mary have the default namespace tutorial namespace tutorial
+
+==================================================
+Arithmetic
+--------------------------------------------------
+
+The Reasoning Engine has built-in support for evaluating arithmetic expressions. To illustrate this we will use an example where we track the location of objects over time where time steps are integers. -- FLoating point values are also supported
+
+holds(at(john,kitchen),1).
+holds(goto(john,office),3).
+maxTime(4).
+holds(at(?x,?loc),?time) :- holds(goto(?x,?loc),?time).
+
+holds(at(?x,?loc),?time2) :- 
+            holds(at(?x,?loc),?time1), 
+            math/evaluate(?time2,math/add(?time1,1)),
+            maxTime(?maxTime),
+            math/lte(?time2,?maxTime),
+            noSupport(~holds(at(?x,?loc),?time2)).
+
+~holds(at(?x,?loc),?time) :-
+            math/evaluate(?prev, math/subtract(?time,1)),
+            holds(at(?x,?loc), ?prev),
+            holds(at(?x,?other), ?time),
+            neq(?prev,?other).
+
+math/evaluate(?time2,math/add(?time1,1)) ==== ?time2 = ?time1 + 1  --- add,subtract, mult, divide, abs, max and min,
+
+math/lte(?time2,?maxTime) === ?time2 <= ?maxTime  --- equal, unequal, lt, < lte <=
+
+==================================================
+Constraining Inferences True
+--------------------------------------------------
+
+The RE allows you to add a constraint that a proposition must be True. done via the $constrainTrue
+
+This is different from adding a fact. Whereas $addFact(P) for some proposition P means that P is true and need not be further justified. $constrainTrue(P) forces the system to justify P. It is a constraint that disallows any assignment of assumptions under which P could not be proven.
+
+Actually, $constrainTrue(P) has equivalent semantics to the denial constraint inconsistent(P) :- noSupport(P), :- not P. 
+
+$addAssumption(person(john)).
+animate(?x) :- person(?x).
+
+$constrainTrue(animate(john)).
+
+knownTrue user/persion(arg1 : user/john).
+knownTrue user/animate(arg1 : user/john).
+
+///:- constrainedTrue(P), noSupport(P).
+
+$addAssumption(robot(john))
+supportable user/robot(arg1 : user/john)
+
+$addRule(animate(?x) :- robot(?x))
+supportable user/person(arg1 : user/robot)
+
+$assertAssumption(~person(john))
+
+knownTrue ~user/person(arg1 : user/john)
+
+==================================================
+Registering Queries
+--------------------------------------------------
+
+Particular queries where you want to be able to track changes to their results as changes aare made to the TRE --- provides a way for you to register a query. 
+
+animate(?x) :- person(?x).
+animate(?x) :- robot(?x).
+canMove(?x) :- animate(?x).
+
+$addAssumption(person(john)).
+$addAssumption(robot(john)).
+$addAssumption(person(mary)).
+$addAssumption(robot(mary)).
+
+$assertAssumption(person(john)) 
+knownTrue user/person(arg1: user/john) 
+knownTrue user/animate(arg1: user/john) 
+knownTrue user/canMove(arg1: user/john)
+Changes to registered query: user/animate(arg1: ?x) 
+knownTrue {?x=user/john} 
+
+
+==================================================
+External Predicate
+--------------------------------------------------
+
+The reasonging Engine provides a way for youu to define 
